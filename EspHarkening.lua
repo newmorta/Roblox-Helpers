@@ -17,6 +17,9 @@ local Blacklist = {} -- UserIds o nombres de jugadores a NUNCA mostrar
 local TargetTeams = {} -- Nombres de equipos específicos a mostrar
 local IgnoreTeams = {} -- Nombres de equipos a ignorar
 
+-- ============ EQUIPOS PERSONALIZADOS ============
+local CustomTeams = {} -- { ["NombreEquipo"] = { players = {}, color = Color3 } }
+
 local Colors = {
 	Enemy = Color3.fromRGB(255, 25, 25),
 	Ally = Color3.fromRGB(25, 255, 25),
@@ -46,7 +49,7 @@ local Settings = {
 	UseWhitelist = false,
 	UseBlacklist = false,
 	
-	-- Prioridad: Whitelist > Blacklist > TeamCheck
+	-- Prioridad: CustomTeams > Whitelist > Blacklist > TeamCheck
 	
 	VisibilityCheck = true,
 	BoxESP = false,
@@ -119,7 +122,6 @@ end
 -- ============ SISTEMA DE FILTRADO AVANZADO ============
 
 function EspHarkening:AddToWhitelist(identifier)
-	-- Puede ser UserId (number) o nombre (string)
 	table.insert(Whitelist, identifier)
 end
 
@@ -191,7 +193,74 @@ function EspHarkening:ClearIgnoreTeams()
 	table.clear(IgnoreTeams)
 end
 
--- Función principal de verificación
+-- ============ SISTEMA DE EQUIPOS PERSONALIZADOS ============
+
+function EspHarkening:CreateCustomTeam(teamName, color)
+	CustomTeams[teamName] = {
+		players = {},
+		color = color or Color3.fromRGB(255, 255, 255)
+	}
+	return CustomTeams[teamName]
+end
+
+function EspHarkening:RemoveCustomTeam(teamName)
+	CustomTeams[teamName] = nil
+end
+
+function EspHarkening:AddToCustomTeam(playerIdentifier, teamName)
+	local team = CustomTeams[teamName]
+	if not team then
+		warn("[ESP] Equipo no existe:", teamName)
+		return false
+	end
+	table.insert(team.players, playerIdentifier)
+	return true
+end
+
+function EspHarkening:RemoveFromCustomTeam(playerIdentifier, teamName)
+	local team = CustomTeams[teamName]
+	if not team then return false end
+	for i, id in ipairs(team.players) do
+		if id == playerIdentifier then
+			table.remove(team.players, i)
+			return true
+		end
+	end
+	return false
+end
+
+function EspHarkening:ClearCustomTeam(teamName)
+	local team = CustomTeams[teamName]
+	if team then
+		table.clear(team.players)
+	end
+end
+
+function EspHarkening:GetPlayerCustomTeam(player)
+	local playerId = player.UserId
+	local playerName = player.Name
+	for teamName, teamData in pairs(CustomTeams) do
+		for _, identifier in ipairs(teamData.players) do
+			if identifier == playerId or identifier == playerName then
+				return teamName, teamData
+			end
+		end
+	end
+	return nil, nil
+end
+
+function EspHarkening:GetCustomTeams()
+	return CustomTeams
+end
+
+function EspHarkening:SetCustomTeamColor(teamName, color)
+	local team = CustomTeams[teamName]
+	if team then
+		team.color = color
+	end
+end
+
+-- Función principal de verificación (ACTUALIZADA con CustomTeams)
 function EspHarkening:ShouldShowESP(player)
 	if player == localPlayer then return false end
 	
@@ -200,18 +269,23 @@ function EspHarkening:ShouldShowESP(player)
 	local team = player.Team
 	local teamName = team and team.Name or "Neutral"
 	
-	-- 1. Prioridad máxima: Whitelist
+	-- 0. EQUIPOS PERSONALIZADOS (máxima prioridad)
+	local customTeamName, customTeamData = self:GetPlayerCustomTeam(player)
+	if customTeamName then
+		return true, "CustomTeam:" .. customTeamName, customTeamData.color
+	end
+	
+	-- 1. Whitelist
 	if Settings.UseWhitelist then
 		for _, id in ipairs(Whitelist) do
 			if id == playerId or id == playerName then
 				return true, "Whitelist", Colors.Target
 			end
 		end
-		-- Si está activada la whitelist y no está en ella, no mostrar
 		return false, "NotWhitelisted", nil
 	end
 	
-	-- 2. Blacklist (segunda prioridad)
+	-- 2. Blacklist
 	if Settings.UseBlacklist then
 		for _, id in ipairs(Blacklist) do
 			if id == playerId or id == playerName then
@@ -902,10 +976,11 @@ function EspHarkening:GetColor(key)
 	return Colors[key]
 end
 
--- Métodos de lista
+-- Métodos de lista (incluyendo CustomTeams)
 function EspHarkening:GetWhitelist() return Whitelist end
 function EspHarkening:GetBlacklist() return Blacklist end
 function EspHarkening:GetTargetTeams() return TargetTeams end
 function EspHarkening:GetIgnoreTeams() return IgnoreTeams end
+function EspHarkening:GetCustomTeams() return CustomTeams end
 
 return EspHarkening
